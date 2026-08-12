@@ -42,6 +42,7 @@ class Position:
     last_price: float = 0.0
     source: str = "launch"          # launch / revival
     liquidity_hint: float = 0.0     # for revivals we mark liquidity from the scanner
+    priced: bool = False            # have we ever gotten a live price update?
 
     def multiple(self, price: float) -> float:
         return price / self.entry_price if self.entry_price else 1.0

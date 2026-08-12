@@ -27,6 +27,7 @@ from .config import settings
 from .db import repository as repo
 from .domain import Action, ManageAction, TokenLaunch, TradeTick
 from .events import EventType, bus
+from .ingestion.birdeye import birdeye
 from .ingestion.feed import PumpPortalFeed
 from .ingestion.holders import holder_check
 from .ingestion.observer import ObservationCollector
@@ -291,11 +292,23 @@ class Agent:
                               symbol=obs.launch.symbol, decision="RISK_BLOCK")
             return
 
-        # 5. Paper buy.
+        # 5. Paper buy. Use a REAL market price for entry (DexScreener/Birdeye) so entry and
+        # future exit prices are on the same scale. The launch's derived price can be off,
+        # which would produce nonsense PnL. Fall back to the observed price if unavailable.
+        real = await scanner.snapshot(mint, pumpfun_only=False)
+        entry_priced = bool(real and real.price_usd > 0)
+        if entry_priced:
+            obs.price_now = real.price_usd
+            if real.liquidity_usd:
+                obs.liquidity_usd = real.liquidity_usd
+            self._last_price[mint] = real.price_usd
         pos = await self.portfolio.open_position(
             obs, verdict.size_usd, decision.conviction, thesis, decision.rationale, decision.plan,
         )
         if pos is not None:
+            # priced only if we anchored entry to a real market price; if not, the
+            # untracked-exit timeout will clean it up rather than showing nonsense PnL.
+            pos.priced = entry_priced
             await repo.upsert_watch(
                 mint, symbol=obs.launch.symbol, name=obs.launch.name, source="launch",
                 disposition="holding", mcap=obs.market_cap_usd,
@@ -495,15 +508,23 @@ class Agent:
 
     async def _refresh_revival_prices(self) -> None:
         """Revival positions aren't on the trade websocket, so poll their price."""
+        # Poll price for EVERY open position. Launch positions barely get WS trade ticks
+        # on the free tier, so without this their price would be stuck at entry forever and
+        # they'd never resolve. DexScreener/Birdeye give a reliable current price.
         for mint, pos in list(self.portfolio.positions.items()):
-            if getattr(pos, "source", "launch") != "revival":
-                continue
-            coin = await scanner.snapshot(mint)
-            if coin and coin.price_usd > 0:
-                self._last_price[mint] = coin.price_usd
-                self._last_liq[mint] = coin.liquidity_usd
-                pos.last_price = coin.price_usd
-                pos.peak_price = max(pos.peak_price, coin.price_usd)
+            coin = await scanner.snapshot(mint, pumpfun_only=False)
+            price = coin.price_usd if coin and coin.price_usd > 0 else None
+            if price is None:
+                be = await birdeye.overview(mint) if birdeye.available else None
+                if be and be.get("price"):
+                    price = float(be["price"])
+            if price:
+                self._last_price[mint] = price
+                if coin and coin.liquidity_usd:
+                    self._last_liq[mint] = coin.liquidity_usd
+                pos.last_price = price
+                pos.peak_price = max(pos.peak_price, price)
+                pos.priced = True
 
     async def _manage_one(self, mint: str) -> None:
         pos = self.portfolio.positions.get(mint)
@@ -540,6 +561,23 @@ class Agent:
                     if pos.obs is not None:
                         await self.wallets.resolve_token(pos.obs, won)
                 return
+
+        # --- Time-based cleanup so nothing is held forever ---
+        # 1) Never got a live price (untrackable) -> exit fast, it's dead weight.
+        # 2) Held a while and basically flat -> nothing happened, free the capital.
+        timeout_reason = None
+        if not getattr(pos, "priced", False) and held_min >= settings.untracked_exit_minutes:
+            timeout_reason = f"no price data after {held_min:.0f}m, exiting untrackable position"
+        elif held_min >= settings.max_hold_minutes and abs(mult - 1.0) <= settings.flat_band_pct:
+            timeout_reason = f"held {held_min:.0f}m and went nowhere ({mult:.2f}x), cutting dead money"
+        if timeout_reason:
+            await self._think(f"⏲ {pos.symbol}: {timeout_reason}.", symbol=pos.symbol, decision="SELL")
+            result = await self.portfolio.sell(mint, price, self._liquidity(mint), timeout_reason)
+            if result is not None:
+                _cp, won = result
+                if pos.obs is not None:
+                    await self.wallets.resolve_token(pos.obs, won)
+            return
 
         state = {
             "symbol": pos.symbol, "entry_mcap": pos.entry_mcap,

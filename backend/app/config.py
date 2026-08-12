@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     hard_stop_loss_pct: float = 0.40      # force exit if down this much from entry
     hard_trailing_giveback_pct: float = 0.55  # force exit if it gives back this much from peak (once in profit)
     hard_stop_min_peak_x: float = 1.5     # trailing floor only arms after reaching this multiple
+    # A fresh buy that goes nowhere is dead money. After this long roughly flat, force exit
+    # (the agent can still cut earlier). And if we never even get a live price, exit sooner.
+    max_hold_minutes: float = 45.0        # force exit a stagnant position after this long
+    flat_band_pct: float = 0.15           # within +/- this of entry counts as 'nothing moved'
+    untracked_exit_minutes: float = 12.0  # if we never got a price, exit this fast
 
     # --- Sizing (fractions of equity) ---
     size_normal_min: float = 0.05
