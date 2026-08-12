@@ -1,0 +1,10 @@
+services:
+  idkbro:
+    build: .
+    container_name: idkbro
+    restart: unless-stopped          # auto-restart on crash or server reboot
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data             # persist SQLite DB + learning across restarts

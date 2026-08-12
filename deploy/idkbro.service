@@ -1,0 +1,26 @@
+# systemd unit for running idkbro 24/7 on a VPS WITHOUT Docker.
+# Install:
+#   sudo cp deploy/idkbro.service /etc/systemd/system/idkbro.service
+#   (edit paths/user below to match your server)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now idkbro
+# Check it:  sudo systemctl status idkbro   |   journalctl -u idkbro -f
+
+[Unit]
+Description=idkbro autonomous memecoin trader agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=idkbro
+WorkingDirectory=/home/idkbro/idkbro/backend
+# Use the venv's python so deps are found.
+ExecStart=/home/idkbro/idkbro/backend/.venv/bin/python -m app.main
+Restart=always
+RestartSec=5
+# Load secrets from the .env file (systemd reads KEY=VALUE lines).
+EnvironmentFile=/home/idkbro/idkbro/backend/.env
+
+[Install]
+WantedBy=multi-user.target

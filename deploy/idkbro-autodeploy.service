@@ -1,0 +1,23 @@
+# Auto-deploy watcher: pulls new GitHub commits and restarts the agent.
+# Install:
+#   sudo cp deploy/idkbro-autodeploy.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now idkbro-autodeploy
+# Logs:  journalctl -u idkbro-autodeploy -f
+
+[Unit]
+Description=idkbro auto-deploy (pull from GitHub + restart)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=idkbro
+Environment=IDKBRO_DIR=/home/idkbro/idkbro
+Environment=IDKBRO_BRANCH=main
+Environment=IDKBRO_POLL_SECONDS=60
+ExecStart=/bin/bash /home/idkbro/idkbro/deploy/autodeploy.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
