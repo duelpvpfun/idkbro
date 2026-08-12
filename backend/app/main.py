@@ -437,7 +437,9 @@ if os.path.isdir(_FRONTEND_DIR):
 
 
 def run() -> None:
-    uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
+    # Railway/Heroku/etc inject the port via $PORT; fall back to the configured one.
+    port = int(os.environ.get("PORT", settings.port))
+    uvicorn.run(app, host=settings.host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

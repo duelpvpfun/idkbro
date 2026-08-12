@@ -18,7 +18,9 @@ import time
 
 from .config import settings
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+_DATA_DIR = os.environ.get("IDKBRO_DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data"
+)
 _BACKUP_DIR = os.path.join(_DATA_DIR, "backups")
 _DB_PATH = os.path.join(_DATA_DIR, "idkbro.db")
 

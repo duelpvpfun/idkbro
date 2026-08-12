@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import (
 
 from .models import Base
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
+# DATA_DIR is where his brain (idkbro.db) lives. On a host like Railway, set IDKBRO_DATA_DIR
+# to a mounted persistent volume (e.g. /data) so his memory survives redeploys.
+_DATA_DIR = os.environ.get("IDKBRO_DATA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data"
+)
 os.makedirs(_DATA_DIR, exist_ok=True)
 _DB_PATH = os.path.join(_DATA_DIR, "idkbro.db")
 

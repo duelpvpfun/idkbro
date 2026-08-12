@@ -1,0 +1,12 @@
+# Railway build config. Installs backend deps into the image.
+[phases.setup]
+nixPkgs = ["python312"]
+
+[phases.install]
+cmds = ["python -m venv /opt/venv", "/opt/venv/bin/pip install --upgrade pip", "/opt/venv/bin/pip install -r backend/requirements.txt"]
+
+[phases.build]
+cmds = ["echo build ok"]
+
+[start]
+cmd = "cd backend && /opt/venv/bin/python -m app.main"
