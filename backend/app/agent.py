@@ -615,16 +615,22 @@ class Agent:
             closed_pos, won = result
             if pos.obs is not None:
                 await self.wallets.resolve_token(pos.obs, won)
-            # Post notable exits — big wins and honest mistakes, its call which matter.
-            # Sanity guard: an absurd multiple (>50x) can only be bad price data, never a
-            # real paper fill. Never post or celebrate garbage numbers.
+# Post notable exits — big wins AND honest mistakes. A real 50x+ absolutely
+            # should be shared. The only thing we block is a number that came from BAD DATA:
+            # a position never anchored to a real market price (pos.priced=False) can't have a
+            # trustworthy multiple. Data validity is the gate, not the size of the win.
             if settings.x_post_closes:
                 pnl_x = pos.peak_multiple()
                 final_mult = mult
-                sane = 0.0 < final_mult <= 50 and 0.0 < pnl_x <= 50
-                notable = sane and (final_mult >= 1.8 or final_mult <= 0.6)
+                data_ok = getattr(pos, "priced", False) and final_mult > 0 and pnl_x > 0
+                notable = data_ok and (final_mult >= 1.8 or final_mult <= 0.6)
                 if notable:
-                    outcome = "banked a winner" if won else "took a loss"
+                    if final_mult >= 10:
+                        outcome = "absolute banger, this is what we live for"
+                    elif won:
+                        outcome = "banked a winner"
+                    else:
+                        outcome = "took a loss"
                     await x_poster.maybe_post(
                         "trade_close",
                         f"Closed ${pos.symbol} at {final_mult:.2f}x (peaked {pnl_x:.2f}x) — {outcome}. "
