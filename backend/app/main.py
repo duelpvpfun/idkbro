@@ -415,6 +415,23 @@ async def control(cmd: Control) -> JSONResponse:
     return JSONResponse({"ok": True, "paused": agent.paused, "kill_switch": agent.risk.kill_switch})
 
 
+class TweetDelete(BaseModel):
+    tweet_id: str = ""
+    last: int = 0        # delete the last N tweets instead of a specific id
+
+
+@app.post("/api/tweet/delete")
+async def delete_tweet(body: TweetDelete) -> JSONResponse:
+    """Delete a bad tweet by id, or the last N the agent posted."""
+    if body.tweet_id:
+        ok = await x_poster.delete_tweet(body.tweet_id)
+        return JSONResponse({"ok": ok})
+    if body.last > 0:
+        n = await x_poster.delete_last(body.last)
+        return JSONResponse({"ok": True, "deleted": n})
+    return JSONResponse({"ok": False, "error": "need tweet_id or last"})
+
+
 if os.path.isdir(_FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=_FRONTEND_DIR), name="static")
 

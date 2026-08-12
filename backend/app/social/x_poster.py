@@ -68,6 +68,7 @@ class XPoster:
         self._reads_today = 0
         self._follows_today = 0
         self._read_client = None
+        self._posted_ids: list = []      # tweet IDs we posted, so we can delete if needed
         if settings.x_enabled and not settings.x_dry_run:
             self._client = self._build_client()
         # Read client works even in dry-run (reading isn't posting) as long as X is enabled.
@@ -314,11 +315,40 @@ class XPoster:
                     kwargs["in_reply_to_tweet_id"] = reply_to
                 resp = await asyncio.to_thread(self._client.create_tweet, **kwargs)
                 reply_to = resp.data["id"]
+                self._posted_ids.append(reply_to)  # remember so we can delete if needed
                 self._record_post(1)
+            self._posted_ids = self._posted_ids[-100:]
             await bus.emit(EventType.TWEET, text=" ⏎ ".join(tweets), kind=kind,
-                           dry_run=False, thread=len(tweets) > 1)
+                           dry_run=False, thread=len(tweets) > 1, tweet_id=str(reply_to))
         except Exception as e:
             await bus.emit(EventType.ERROR, where="x_poster", error=str(e))
+
+    async def delete_last(self, n: int = 1) -> int:
+        """Delete the last n tweets the agent posted. Returns how many were deleted."""
+        if self._client is None:
+            return 0
+        import asyncio
+
+        deleted = 0
+        for _ in range(min(n, len(self._posted_ids))):
+            tid = self._posted_ids.pop()
+            try:
+                await asyncio.to_thread(self._client.delete_tweet, tid)
+                deleted += 1
+            except Exception:
+                pass
+        return deleted
+
+    async def delete_tweet(self, tweet_id: str) -> bool:
+        if self._client is None:
+            return False
+        import asyncio
+
+        try:
+            await asyncio.to_thread(self._client.delete_tweet, tweet_id)
+            return True
+        except Exception:
+            return False
 
     async def _compose(self, kind: str, context: str, allow_thread: bool) -> list[str]:
         """Returns a list of tweet strings. Length 1 = single tweet, >1 = a thread."""

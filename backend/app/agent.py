@@ -616,10 +616,13 @@ class Agent:
             if pos.obs is not None:
                 await self.wallets.resolve_token(pos.obs, won)
             # Post notable exits — big wins and honest mistakes, its call which matter.
+            # Sanity guard: an absurd multiple (>50x) can only be bad price data, never a
+            # real paper fill. Never post or celebrate garbage numbers.
             if settings.x_post_closes:
                 pnl_x = pos.peak_multiple()
                 final_mult = mult
-                notable = final_mult >= 1.8 or final_mult <= 0.6
+                sane = 0.0 < final_mult <= 50 and 0.0 < pnl_x <= 50
+                notable = sane and (final_mult >= 1.8 or final_mult <= 0.6)
                 if notable:
                     outcome = "banked a winner" if won else "took a loss"
                     await x_poster.maybe_post(
