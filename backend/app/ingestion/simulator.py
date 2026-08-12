@@ -101,6 +101,7 @@ class SimulatedFeed:
     def __init__(self) -> None:
         self.launches: asyncio.Queue[TokenLaunch] = asyncio.Queue()
         self.trades: asyncio.Queue[TradeTick] = asyncio.Queue()
+        self.migrations: asyncio.Queue[dict] = asyncio.Queue()  # unused in sim, keeps API parity
         self._tokens: dict[str, _SimToken] = {}
         self._watched: set[str] = set()
         self._running = False

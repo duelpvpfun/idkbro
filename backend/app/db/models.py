@@ -189,6 +189,25 @@ class WatchlistCoin(Base):
     notes: Mapped[str] = mapped_column(Text, default="")
 
 
+class MigratedCoin(Base):
+    """A pump.fun coin that GRADUATED (migrated off the bonding curve to PumpSwap).
+
+    Migration means a coin already had its run — the name/ticker is 'spent'. Copycats
+    then spam the same name + ticker on fresh launches. We remember migrated name/ticker
+    pairs so we can skip those redeploys instead of wasting an observation window + LLM
+    call on a coin whose identity already migrated.
+    """
+
+    __tablename__ = "migrated_coins"
+
+    mint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), default="", index=True)
+    name: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # Normalized key (lowercased name|symbol) for fast dedupe lookups.
+    key: Mapped[str] = mapped_column(String(128), default="", index=True)
+    migrated_ts: Mapped[float] = mapped_column(Float, default=time.time)
+
+
 class Identity(Base):
     """The agent's self-chosen public identity. It decides these itself; we just apply
     the name + bio to X. pfp/banner are stored as the concept the agent wants (an image

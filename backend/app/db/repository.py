@@ -14,12 +14,18 @@ from .models import (
     Identity,
     Lesson,
     MarketKnowledge,
+    MigratedCoin,
     Playbook,
     TrackedTrader,
     Trade,
     WalletStat,
     WatchlistCoin,
 )
+
+
+def _migration_key(name: str, symbol: str) -> str:
+    """Normalized identity key for a migrated coin (case/space-insensitive)."""
+    return f"{(name or '').strip().lower()}|{(symbol or '').strip().lower()}"
 
 DEFAULT_PLAYBOOK = """# Trading philosophy (v1 — starting instincts, will evolve)
 
@@ -398,6 +404,46 @@ async def mark_postmortem_done(mint: str) -> None:
 async def get_watch(mint: str) -> Optional[WatchlistCoin]:
     async with SessionLocal() as s:
         return await s.get(WatchlistCoin, mint)
+
+
+async def record_migration(mint: str, symbol: str, name: str) -> None:
+    """Remember that a coin migrated (graduated). Its name/ticker is now 'spent' so
+    fresh redeploys reusing it can be skipped."""
+    async with write_lock, SessionLocal() as s:
+        row = await s.get(MigratedCoin, mint)
+        if row is None:
+            s.add(MigratedCoin(
+                mint=mint, symbol=symbol or "", name=name or "",
+                key=_migration_key(name, symbol), migrated_ts=time.time(),
+            ))
+            await s.commit()
+
+
+async def was_name_migrated(name: str, symbol: str, within_days: float = 30.0) -> Optional[MigratedCoin]:
+    """Return a recent migrated coin whose name+ticker matches (a fresh launch is a
+    redeploy of an already-graduated identity), else None. A symbol match alone isn't
+    enough (tickers get reused across unrelated coins), so we require the name too."""
+    key = _migration_key(name, symbol)
+    if not name or not symbol:
+        return None
+    cutoff = time.time() - within_days * 86_400
+    async with SessionLocal() as s:
+        result = await s.execute(
+            select(MigratedCoin)
+            .where(MigratedCoin.key == key)
+            .where(MigratedCoin.migrated_ts >= cutoff)
+            .order_by(MigratedCoin.migrated_ts.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
+
+async def recent_migrations(limit: int = 20) -> list[MigratedCoin]:
+    async with SessionLocal() as s:
+        result = await s.execute(
+            select(MigratedCoin).order_by(MigratedCoin.migrated_ts.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
 
 
 async def watchlist_for_revival(limit: int = 60, max_age_days: float = 14) -> list[WatchlistCoin]:

@@ -100,6 +100,8 @@ class PumpPortalFeed:
         self.url = settings.pumpportal_ws_url
         self.launches: asyncio.Queue[TokenLaunch] = asyncio.Queue()
         self.trades: asyncio.Queue[TradeTick] = asyncio.Queue()
+        # Coins that graduated off the bonding curve (migrated to PumpSwap).
+        self.migrations: asyncio.Queue[dict] = asyncio.Queue()
         self.sol = SolPrice()
         self._watched: set[str] = set()
         self._ws = None
@@ -113,6 +115,8 @@ class PumpPortalFeed:
                 async with websockets.connect(self.url, ping_interval=20) as ws:
                     self._ws = ws
                     await ws.send(json.dumps({"method": "subscribeNewToken"}))
+                    # Graduations: a coin migrating means its name/ticker is now spent.
+                    await ws.send(json.dumps({"method": "subscribeMigration"}))
                     # Re-subscribe to any tokens we're still watching.
                     if self._watched:
                         await ws.send(
@@ -159,6 +163,18 @@ class PumpPortalFeed:
         if not isinstance(msg, dict):
             return
         txtype = msg.get("txType")
+
+        # Migration/graduation event: coin left the bonding curve for PumpSwap.
+        if txtype in ("migrate", "migration") or msg.get("pool") == "pump-amm":
+            mint = msg.get("mint")
+            if mint:
+                await self.migrations.put({
+                    "mint": mint,
+                    "symbol": msg.get("symbol", "") or "",
+                    "name": msg.get("name", "") or "",
+                })
+            return
+
         sol_usd = await self.sol.get()
 
         if txtype == "create" or msg.get("pool") == "pump" and "name" in msg and "mint" in msg:

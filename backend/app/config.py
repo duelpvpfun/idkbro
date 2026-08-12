@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     # How long to watch a fresh launch before deciding (seconds).
     observation_seconds: float = 20.0
 
+    # --- Redeploy filter (skip already-migrated names) ---
+    # When a coin migrates (graduates), its name+ticker is 'spent'; copycats spam it.
+    # Skip fresh launches reusing a name+ticker that migrated within this window.
+    skip_migrated_redeploys: bool = True
+    migrated_name_ttl_days: float = 30.0
+
     # --- Safety (pump.fun specific) ---
     max_dev_holding_pct: float = 8.0
     max_sniped_pct: float = 15.0          # snipers/bundlers in the first moments

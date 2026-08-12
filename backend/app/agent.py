@@ -107,6 +107,7 @@ class Agent:
             asyncio.create_task(self._feed_task()),
             asyncio.create_task(self._launch_task()),
             asyncio.create_task(self._trade_task()),
+            asyncio.create_task(self._migration_task()),
             asyncio.create_task(self._window_task()),
             asyncio.create_task(self._manage_task()),
         ]
@@ -140,6 +141,25 @@ class Agent:
                 launch: TokenLaunch = await self.feed.launches.get()
                 if self.paused:
                     continue
+                # Redeploy filter: if a coin with this exact name+ticker already migrated
+                # (graduated), this is a copycat riding a spent identity. Skip it before
+                # wasting an observation window + LLM call on it.
+                if settings.skip_migrated_redeploys:
+                    prior = await repo.was_name_migrated(
+                        launch.name, launch.symbol, settings.migrated_name_ttl_days
+                    )
+                    if prior is not None:
+                        await bus.emit(
+                            EventType.DECISION, symbol=launch.symbol, mint=launch.mint,
+                            action="SKIP",
+                            reason=f"redeploy of already-migrated {launch.name} (${launch.symbol})",
+                        )
+                        await repo.upsert_watch(
+                            launch.mint, symbol=launch.symbol, name=launch.name, source="launch",
+                            disposition="skipped", mcap=0.0,
+                            skip_reason=f"redeploy of migrated {launch.name} (${launch.symbol})",
+                        )
+                        continue
                 await self.wallets.note_creator(launch.creator_wallet)
                 self._last_liq[launch.mint] = launch.initial_liquidity_usd
                 self.observer.begin(launch)
@@ -174,6 +194,44 @@ class Agent:
             pass
         except Exception as e:
             await bus.emit(EventType.ERROR, where="trade", error=str(e))
+
+    # --- migrations: remember graduated names to skip redeploys ----------
+    async def _migration_task(self) -> None:
+        try:
+            while self.running:
+                m = await self.feed.migrations.get()
+                mint = m.get("mint") or ""
+                if not mint:
+                    continue
+                symbol = m.get("symbol") or ""
+                name = m.get("name") or ""
+                # Migration events often carry only the mint; backfill name/ticker from
+                # our own memory (watchlist), then DexScreener, so the redeploy key works.
+                if not name or not symbol:
+                    known = await repo.get_watch(mint)
+                    if known is not None:
+                        name = name or known.name
+                        symbol = symbol or known.symbol
+                if not name or not symbol:
+                    try:
+                        snap = await scanner.snapshot(mint, pumpfun_only=False)
+                        if snap is not None:
+                            name = name or snap.name
+                            symbol = symbol or snap.symbol
+                    except Exception:
+                        pass
+                if not name and not symbol:
+                    continue
+                await repo.record_migration(mint, symbol, name)
+                await self._think(
+                    f"📈 {name or symbol} (${symbol}) graduated. Marking that name/ticker "
+                    "as spent — I'll skip copycats redeploying it.",
+                    symbol=symbol, mint=mint,
+                )
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            await bus.emit(EventType.ERROR, where="migration", error=str(e))
 
     # --- window closes: decide entry ------------------------------------
     async def _window_task(self) -> None:
