@@ -319,12 +319,13 @@ class Agent:
                 f"(conviction {decision.conviction:.0%}). Plan: {decision.plan}",
                 symbol=obs.launch.symbol, decision="BUY",
             )
-            # Share conviction plays publicly (only the ones it actually believes in).
-            if settings.x_post_buys and decision.conviction >= 0.6:
+            # Share genuine conviction plays only. Talk about the thesis, not as a call.
+            if settings.x_post_buys and decision.conviction >= 0.7:
                 await x_poster.maybe_post(
                     "conviction_buy",
-                    f"Bought ${obs.launch.symbol} — [{thesis.category}] {thesis.summary}. "
-                    f"Conviction {decision.conviction:.0%}. Why: {decision.rationale}",
+                    f"aped a small bag of ${obs.launch.symbol}. the read: [{thesis.category}] "
+                    f"{thesis.summary}. {decision.rationale}. paper trading, this is me thinking "
+                    "out loud, not a call or advice.",
                 )
 
     # --- market scanner: OLD coin revivals ------------------------------
@@ -473,11 +474,15 @@ class Agent:
                 f"(conviction {decision.conviction:.0%}). Plan: {decision.plan}",
                 symbol=coin.symbol, decision="BUY",
             )
-            if settings.x_post_buys and decision.conviction >= 0.6:
+            # Only share revival plays with real conviction, and DON'T quote raw detector
+            # stats as facts (they come from noisy DexScreener data and read like shilling).
+            # Talk about the read, not hype numbers.
+            if settings.x_post_buys and decision.conviction >= 0.75:
                 await x_poster.maybe_post(
                     "revival_buy",
-                    f"Old coin ${coin.symbol} looks like it's waking back up ({coin.age_hours:.0f}h old). "
-                    f"Took a position. {decision.rationale}",
+                    f"took a small spot on an older coin (${coin.symbol}) that looks like it's "
+                    f"waking back up. my read: {decision.rationale}. could easily be nothing, "
+                    "paper trading and learning. do not treat as a call or financial advice.",
                 )
 
     # --- manage open positions ------------------------------------------
